@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(taskkill /F /IM \"ExcelImportSystem.API.exe\")",
+      "Bash(dotnet build *)",
+      "Bash(powershell -Command \"Stop-Process -Id 4268 -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; dotnet build 'F:\\\\claudeCode\\\\ExcelImportSystem\\\\src\\\\ExcelImportSystem.API\\\\ExcelImportSystem.API.csproj' 2>&1\")"
+    ]
+  }
+}

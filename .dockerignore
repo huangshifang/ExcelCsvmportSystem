@@ -1,0 +1,35 @@
+# .NET
+**/bin/
+**/obj/
+**/logs/
+*.user
+*.suo
+
+# Node
+**/node_modules/
+**/dist/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.sln.DotSettings
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+
+# Docs
+docs/
+*.md
+!README.md

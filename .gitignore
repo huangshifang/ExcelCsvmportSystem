@@ -1,0 +1,35 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.vs/
+.vs/
+*.DotSettings.user
+
+# Node / React
+node_modules/
+dist/
+*.local
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.docker
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+/publish/
+
+# Logs
+*.log
+logs/

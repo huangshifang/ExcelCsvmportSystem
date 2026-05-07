@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="ExcelImportSystem.API/ExcelImportSystem.API.csproj" />
+  <Project Path="ExcelImportSystem.Core/ExcelImportSystem.Core.csproj" />
+  <Project Path="ExcelImportSystem.Infrastructure/ExcelImportSystem.Infrastructure.csproj" />
+</Solution>
