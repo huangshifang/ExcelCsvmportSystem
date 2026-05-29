@@ -13,6 +13,8 @@ public class ImportLog
     /// <summary>Status: Success, Partial, Failed</summary>
     public string Status { get; set; } = "Success";
     public string? ErrorMessage { get; set; }
+    public int? ServerId { get; set; }
+    public string? ServerName { get; set; }
     public DateTime ImportedAt { get; set; } = DateTime.UtcNow;
 
     public User User { get; set; } = null!;

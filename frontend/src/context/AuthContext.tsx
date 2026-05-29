@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { authApi } from '../api/auth';
-import type { LoginRequest, LoginResponse, UserInfo } from '../types';
+import type { LoginRequest, UserInfo } from '../types';
 
 interface AuthContextType {
   user: UserInfo | null;
@@ -35,8 +35,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      localStorage.removeItem('permissions');
       setToken(null);
       setUser(null);
+      setPermissions([]);
     } finally {
       setLoading(false);
     }
@@ -65,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: '',
         isActive: true,
         roles: result.roles,
+        authType: 'Local',
       });
     }
   };

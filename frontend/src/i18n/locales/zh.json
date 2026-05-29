@@ -1,13 +1,17 @@
 {
   "app": {
     "title": "Excel 导入系统",
-    "titleShort": "EI"
+    "titleShort": "EI",
+    "copyright": "© 2026 huangshifang. All rights reserved."
   },
   "nav": {
     "dashboard": "仪表盘",
     "import": "导入数据",
     "importLogs": "导入日志",
-    "userManagement": "用户管理"
+    "loginAudit": "登录审计",
+    "userManagement": "用户管理",
+    "systemSettings": "系统设置",
+    "servers": "服务器"
   },
   "header": {
     "logout": "退出登录"
@@ -16,12 +20,13 @@
     "title": "登录",
     "username": "用户名",
     "password": "密码",
+    "captcha": "验证码",
+    "captchaPlaceholder": "请输入验证码",
     "submit": "登录",
-    "error": "用户名或密码无效",
-    "hint": "默认账号: admin / admin123。如已启用 AD，可使用域账号登录。"
+    "error": "用户名或密码无效"
   },
   "import": {
-    "pageTitle": "Excel 数据导入",
+    "pageTitle": "数据导入",
     "stepConfigure": "配置",
     "stepMapColumns": "映射列",
     "stepResult": "结果",
@@ -30,10 +35,12 @@
     "selectTable": "数据表",
     "selectTablePlaceholder": "请选择数据表",
     "selectTableFirst": "请先选择数据库",
-    "uploadExcel": "上传 Excel 文件",
-    "uploadLabel": "Excel 文件 (.xlsx)",
-    "uploadHint": "支持 .xlsx 和 .xls 格式",
-    "uploadText": "点击或拖拽 Excel 文件到此区域",
+    "uploadExcel": "上传文件",
+    "uploadLabel": "Excel / CSV 文件",
+    "uploadHint": "支持 .xlsx、.xls 和 .csv 格式",
+    "uploadText": "点击或拖拽 Excel/CSV 文件到此区域",
+    "importing": "正在导入...",
+    "starting": "正在启动导入...",
     "hasHeaderRow": "包含表头",
     "useTransaction": "使用事务",
     "batchSize": "批量大小",
@@ -70,6 +77,7 @@
     "skip": "-- 跳过 --",
     "sampleData": "示例数据",
     "empty": "(空)",
+    "noColumnsFound": "无法读取到文件列，请确认文件已选择并重新点击下一步。",
     "importSummary": "导入摘要"
   },
   "logs": {
@@ -95,7 +103,9 @@
     "error": "错误信息",
     "statusSuccess": "成功",
     "statusPartial": "部分成功",
-    "statusFailed": "失败"
+    "statusFailed": "失败",
+    "server": "数据库实例",
+    "local": "本地"
   },
   "users": {
     "pageTitle": "用户管理",
@@ -126,7 +136,19 @@
     "ldapSearchNoResults": "未找到 AD 用户",
     "linkLdapSuccess": "AD 账号关联成功",
     "unlinkLdapSuccess": "AD 账号已解除关联",
-    "unlinkLdapConfirm": "确认解除此用户的 AD 关联？解除后将需要使用本地密码登录。"
+    "unlinkLdapConfirm": "确认解除此用户的 AD 关联？解除后将需要使用本地密码登录。",
+    "databaseAccess": "数据库权限",
+    "databaseAccessTitle": "数据库权限 - {username}",
+    "databaseAccessHint": "选择该用户可导入数据的目标数据库。管理员默认拥有所有数据库的访问权限。",
+    "tableAccessHint": "选择用户可以导入的数据库和具体表。'选择所有表'将授予整个数据库的访问权限。管理员自动拥有全部访问权限。",
+    "selectAllTables": "选择所有表",
+    "databaseAccessSave": "保存",
+    "databaseAccessSuccess": "数据库权限已更新",
+    "noDatabaseAccess": "未授予任何数据库权限",
+    "resetPassword": "重置密码",
+    "resetPasswordTitle": "重置密码 - {username}",
+    "resetPasswordHint": "为新密码设置至少 6 个字符",
+    "resetPasswordSuccess": "密码已重置"
   },
   "dashboard": {
     "pageTitle": "仪表盘",
@@ -135,6 +157,50 @@
     "totalRows": "总行数",
     "successRows": "成功行数",
     "failedRows": "失败行数"
+  },
+  "system": {
+    "pageTitle": "系统设置",
+    "ldapTitle": "LDAP / Active Directory 配置",
+    "ldapHint": "LDAP 配置将持久化到数据库，修改后即时生效无需重启。绑定密码经加密存储。",
+    "ldapEnabled": "启用 LDAP",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "ldapServer": "服务器地址",
+    "ldapPort": "端口",
+    "ldapDomain": "域",
+    "ldapBaseDn": "Base DN",
+    "ldapFilter": "用户过滤器模板",
+    "ldapBindUser": "绑定用户 DN",
+    "ldapBindPassword": "绑定密码",
+    "save": "保存配置",
+    "saveSuccess": "LDAP 配置已保存",
+    "saveFailed": "保存配置失败",
+    "loadFailed": "加载配置失败",
+    "testTitle": "测试 LDAP 连接",
+    "testButton": "测试连接",
+    "testUsername": "测试用户名",
+    "testPassword": "测试密码",
+    "testCredentialsRequired": "请输入测试用户名和密码",
+    "testSuccess": "连接成功",
+    "testFailed": "认证失败",
+    "testError": "连接测试出错"
+  },
+  "changePassword": {
+    "title": "修改密码",
+    "oldPassword": "旧密码",
+    "newPassword": "新密码",
+    "confirmPassword": "确认新密码",
+    "passwordMismatch": "两次输入的密码不一致",
+    "minLength": "密码至少6位",
+    "success": "密码修改成功，请重新登录",
+    "failed": "密码修改失败"
+  },
+  "loginAudit": {
+    "pageTitle": "登录审计日志",
+    "searchUsername": "搜索用户名...",
+    "failureReason": "失败原因",
+    "ipAddress": "IP 地址",
+    "userAgent": "用户代理"
   },
   "common": {
     "loading": "加载中...",

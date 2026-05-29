@@ -255,6 +255,20 @@ END
 - 自动检测分隔符（`,` / `\t`）
 - 支持带引号的字段、标题行、多种编码
 - 配置 `CsvConfiguration`：`BadDataFound = null`（静默跳过坏行），`Mode = CsvMode.RFC4180`
+- `HasHeaderRow=false` 时自动生成 `Column1`..`ColumnN` 列名，第一行作为数据读取（不丢失首行）
+
+**多工作表 Excel 处理**：
+
+当 Excel 文件包含多个工作表时，`GetFirstDataWorksheet()` 自动跳过空占位工作表，选择第一个有数据的工作表：
+
+```
+遍历 Worksheets
+  ├─ Dimension == null → 跳过（无任何数据区域）
+  ├─ Dimension.Rows == 1 && Dimension.Columns == 1 && A1 为空 → 跳过（仅空 A1 占位）
+  └─ 有数据 → 返回该工作表
+```
+
+某些企业报表（如益海嘉里系统导出的报表）常在 sheet1 放置空模板，实际数据从 sheet2 开始。此机制确保自动选中正确的工作表。
 
 **关键实现细节**（`ImportService.cs`）：
 - `IServiceScopeFactory` 替代直接的 `AppDbContext` 注入（因为 fire-and-forget 任务超出请求作用域生命周期）
@@ -265,6 +279,23 @@ END
 - 大文件支持：Kestrel `MaxRequestBodySize` = 210MB，`FormOptions.MultipartBodyLengthLimit` = 210MB
 - 错误行收集到 `Errors` 列表，完整记录到 `ImportLog` 中
 - 接口变更：`PreviewAsync(int userId, ...)`、`ExecuteAsync(int userId, ...)` 均需 userId 用于权限验证
+
+**导入日志的服务器追踪**：
+
+`ImportLog` 实体新增 `ServerId` (int?) 和 `ServerName` (string?) 字段，记录每次导入操作的目标 SQL Server 实例：
+
+- 本地导入：`ServerId = null`，`ServerName = null`，前端显示「本地」
+- 远程导入：`ServerId` 为 `SqlServerInstance.Id`，`ServerName` 从 `SqlServerInstances` 表查询获取
+- `ImportService.ExecuteInternalAsync()` 在写入日志时查询实例名称并保存
+- `ImportLogService` 的所有查询投影已包含这两个字段
+- 前端导入日志页面表格和详情模态框显示「数据库实例」列
+- SQL 迁移：`IF NOT EXISTS` 检查后 `ALTER TABLE ImportLogs ADD ServerId / ServerName`
+
+**前端防御性处理**（`ImportPage.tsx`）：
+
+- `excelColumns` 变量安全提取（`preview?.excelColumns ?? []`），防止 `preview` 为 null 时调用 `.filter()` 抛出 TypeError
+- 空列检测：`excelColumns.length === 0` 时显示红色错误提示「无法读取到文件列」，而非误导性的绿色「所有列已映射」
+- 映射状态 Alert 位于表格下方：用户先查看映射关系，再确认状态
 
 ### 5. 多 SQL Server 实例支持
 
@@ -311,6 +342,12 @@ END
 - `EnsureCacheAsync()` 懒加载：首次调用时遍历所有活跃服务器，对每个执行 `SELECT name FROM sys.databases`
 - 远程服务器不可达时记录 `LogWarning`，不阻塞本地数据库访问（优雅降级）
 
+**跨数据库查询模式 — `ChangeDatabase`**：
+
+查询远程服务器上的数据库表/列信息时，不采用 3-part 命名（如 `[Database].INFORMATION_SCHEMA.TABLES`），因为当连接字符串已包含 Initial Catalog 或数据库跨不同实例时，3-part 命名可能解析失败。
+
+正确做法：连接打开后调用 `connection.ChangeDatabase(database)` 切换当前数据库上下文，然后直接查询 `INFORMATION_SCHEMA.TABLES`（不带数据库前缀）。`TableService` 的 `GetTablesAsync`、`GetTableAsync` 以及 `ImportService` 的 `SqlBulkCopy.DestinationTableName` 和回退 INSERT 均遵循此模式。
+
 **ServerId 在各层的传播**：
 
 | 层级 | 传播方式 |
@@ -321,6 +358,54 @@ END
 | `ITableService` | `GetTablesAsync(database, schema?, userId?, serverId?)` |
 | `IDatabaseAccessService` | `HasAccessAsync(userId, db, schema?, table?, serverId?)` |
 | 前端 FormData | `formData.append('serverId', String(selectedServerId))` |
+
+**前端数据库选择器复合键模式**：
+
+由于多个 SQL Server 实例可能包含同名数据库，前端数据库下拉框不能仅以数据库名称作为 value。应采用复合键 `${serverId ?? 0}::${name}` 编码，选值时通过 `parseDbKey()` 解析出 `serverId` 和数据库名：
+
+```typescript
+// 下拉框选项
+options={databases.map((d) => ({
+  label: d.serverName ? `[${d.serverName}] ${d.name}` : d.name,
+  value: `${d.serverId ?? 0}::${d.name}`,  // 复合键
+}))}
+
+// 解析复合键
+const parseDbKey = (key: string): { name: string; serverId?: number } => {
+  const idx = key.indexOf('::');
+  if (idx === -1) return { name: key };
+  const sid = parseInt(key.substring(0, idx), 10);
+  return { name: key.substring(idx + 2), serverId: (isNaN(sid) || sid === 0) ? undefined : sid };
+};
+```
+
+- `serverId === 0` 映射为 `undefined`（本地服务器），确保 API 请求不携带 `serverId` 参数
+- `serverId > 0` 映射为对应的远程服务器 ID
+- Select 组件的 `value` 属性也需使用复合键格式：`value={selectedDatabase ? \`${selectedServerId ?? 0}::${selectedDatabase}\` : undefined}`
+
+**控制器 serverId 参数模式**：
+
+所有需要区分数据库实例的 API 端点必须接收并透传 `serverId` 参数：
+
+```csharp
+// DatabaseAccessController - 展开数据库获取表列表
+[HttpGet("tables/{database}")]
+public async Task<ActionResult<...>> GetDatabaseTables(
+    string database, [FromQuery] int? serverId = null)
+{
+    var tables = await _tableService.GetTablesAsync(database, serverId: serverId);
+}
+
+// TableController - 导入页获取表列表（已有正确实现）
+[HttpGet]
+public async Task<ActionResult<...>> GetTables(
+    [FromQuery] string? database, [FromQuery] string? schema, [FromQuery] int? serverId = null)
+{
+    var tables = await _tableService.GetTablesAsync(database, schema, userId, serverId);
+}
+```
+
+**常见陷阱**：忘记在控制器方法签名中添加 `[FromQuery] int? serverId` 参数，导致该参数被框架丢弃，所有请求都连接到本地服务器。
 
 **API 端点**（`ServerController`）：
 
@@ -414,10 +499,11 @@ GET /api/table/databases (带 JWT userId)
     → 非 Admin → 查询 UserDatabaseAccesses 表（DISTINCT DatabaseName）
     → 返回用户有权访问的数据库列表
 
-GET /api/table?database=X (带 JWT userId)
-  → TableService.GetTablesAsync(database, userId)
-    → 查询 INFORMATION_SCHEMA 获取该库全部表
-    → 非 Admin 用户：查询 UserTableAccesses
+GET /api/table?database=X&serverId=N (带 JWT userId)
+  → TableService.GetTablesAsync(database, userId, serverId)
+    → 通过 IConnectionFactory.CreateConnectionAsync(serverId) 连接到目标服务器
+    → ChangeDatabase(database) 切换上下文后查询 INFORMATION_SCHEMA 获取表列表
+    → 非 Admin 用户：查询 UserTableAccesses（含 ServerId 过滤）
       → 存在 wildcard 授权 → 返回全部表
       → 无 wildcard → 过滤到仅授权的表
 
@@ -432,7 +518,8 @@ POST /api/import/preview / execute
 - 支持两种授权模式切换：
   - 「选择所有表」→ wildcard 授权（整库访问）
   - 逐表勾选 → 精确授权（仅选中的表）
-- 通过 `GET /api/databaseaccess/tables/{database}` 懒加载表列表
+- 通过 `GET /api/databaseaccess/tables/{database}?serverId=N` 懒加载表列表
+- 使用复合键 `${serverId ?? 0}:${database}` 区分不同服务器上的同名数据库
 
 ### 9. 系统设置（运行时 LDAP 配置）
 

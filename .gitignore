@@ -33,3 +33,9 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Offline deploy packages (too large for GitHub)
+offline-deploy*
+
+# Test helper scripts
+test_*

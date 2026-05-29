@@ -13,13 +13,19 @@ import {
   MenuUnfoldOutlined,
   GlobalOutlined,
   CheckCircleOutlined,
+  SettingOutlined,
+  KeyOutlined,
+  AuditOutlined,
+  CloudServerOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
+import ChangePasswordModal from './ChangePasswordModal';
 
 const { Header, Sider, Content } = Layout;
 
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const { user, logout, hasPermission } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -51,12 +57,37 @@ export default function AppLayout() {
           },
         ]
       : []),
+    ...(hasPermission('Audit.View')
+      ? [
+          {
+            key: '/login-logs',
+            icon: <AuditOutlined />,
+            label: t('nav.loginAudit'),
+          },
+        ]
+      : []),
+    ...(hasPermission('Server.View')
+      ? [{
+            key: '/servers',
+            icon: <CloudServerOutlined />,
+            label: t('nav.servers'),
+          }]
+      : []),
     ...(hasPermission('User.Manage')
       ? [
           {
             key: '/users',
             icon: <UserOutlined />,
             label: t('nav.userManagement'),
+          },
+        ]
+      : []),
+    ...(hasPermission('System.Manage')
+      ? [
+          {
+            key: '/system',
+            icon: <SettingOutlined />,
+            label: t('nav.systemSettings'),
           },
         ]
       : []),
@@ -71,10 +102,14 @@ export default function AppLayout() {
     items: [
       { key: 'profile', label: `${user?.displayName} (${user?.username})`, disabled: true },
       { type: 'divider' as const },
+      ...(user?.authType !== 'LDAP'
+        ? [{ key: 'changePassword', label: t('changePassword.title'), icon: <KeyOutlined /> }]
+        : []),
       { key: 'logout', label: t('header.logout'), icon: <LogoutOutlined />, danger: true },
     ],
     onClick: ({ key }: { key: string }) => {
       if (key === 'logout') handleLogout();
+      if (key === 'changePassword') setChangePasswordOpen(true);
     },
   };
 
@@ -118,6 +153,20 @@ export default function AppLayout() {
           items={menuItems}
           onClick={({ key }) => navigate(key)}
         />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 24,
+            left: 0,
+            right: 0,
+            textAlign: 'center',
+            fontSize: 12,
+            color: themeToken.colorTextTertiary,
+            padding: '0 16px',
+          }}
+        >
+          {t('app.copyright')}
+        </div>
       </Sider>
       <Layout>
         <Header
@@ -153,6 +202,10 @@ export default function AppLayout() {
           <Outlet />
         </Content>
       </Layout>
+      <ChangePasswordModal
+        open={changePasswordOpen}
+        onClose={() => setChangePasswordOpen(false)}
+      />
     </Layout>
   );
 }

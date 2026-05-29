@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using ExcelImportSystem.Core.DTOs;
 using ExcelImportSystem.Core.Interfaces;
 
@@ -11,14 +12,31 @@ namespace ExcelImportSystem.API.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
+    private readonly ICaptchaService _captchaService;
+    private readonly ILoginAuditService _auditService;
 
-    public AuthController(IAuthService authService)
+    public AuthController(IAuthService authService, ICaptchaService captchaService, ILoginAuditService auditService)
     {
         _authService = authService;
+        _captchaService = captchaService;
+        _auditService = auditService;
+    }
+
+    [HttpGet("captcha")]
+    [AllowAnonymous]
+    public ActionResult<ApiResponse<CaptchaResponseDto>> GetCaptcha()
+    {
+        var (token, base64Image) = _captchaService.Generate();
+        return Ok(ApiResponse<CaptchaResponseDto>.Ok(new CaptchaResponseDto
+        {
+            Token = token,
+            ImageBase64 = base64Image
+        }));
     }
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("Login")]
     public async Task<ActionResult<ApiResponse<LoginResponseDto>>> Login([FromBody] LoginDto dto)
     {
         try
@@ -116,6 +134,21 @@ public class AuthController : ControllerBase
         }
     }
 
+    [HttpPost("users/{id}/reset-password")]
+    [Authorize(Policy = "UserManage")]
+    public async Task<ActionResult<ApiResponse>> ResetUserPassword(int id, [FromBody] ResetPasswordDto dto)
+    {
+        try
+        {
+            await _authService.ResetPasswordAsync(id, dto.NewPassword);
+            return Ok(ApiResponse.Ok());
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException)
+        {
+            return BadRequest(ApiResponse.Fail(ex.Message));
+        }
+    }
+
     [HttpPost("users/{id}/link-ldap")]
     [Authorize(Policy = "UserManage")]
     public async Task<ActionResult<ApiResponse<UserInfoDto>>> LinkLdap(int id, [FromBody] LinkLdapDto dto)
@@ -165,5 +198,19 @@ public class AuthController : ControllerBase
             return StatusCode(500, ApiResponse<List<LdapSearchResultDto>>.Fail(
                 $"LDAP search failed: {ex.Message}"));
         }
+    }
+
+    [HttpGet("login-logs")]
+    [Authorize(Policy = "AuditView")]
+    public async Task<ActionResult<ApiResponse<PagedResult<LoginAuditLogDto>>>> GetLoginLogs(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? username = null,
+        [FromQuery] bool? success = null,
+        [FromQuery] DateTime? from = null,
+        [FromQuery] DateTime? to = null)
+    {
+        var result = await _auditService.GetLogsAsync(page, pageSize, username, success, from, to);
+        return Ok(ApiResponse<PagedResult<LoginAuditLogDto>>.Ok(result));
     }
 }

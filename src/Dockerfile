@@ -7,18 +7,17 @@ WORKDIR /src
 # Copy NuGet config (includes preview feed)
 COPY nuget.config ./
 
-# Restore dependencies (leveraging layer caching)
+# Copy project files for restore caching
 COPY ExcelImportSystem.Core/*.csproj ExcelImportSystem.Core/
 COPY ExcelImportSystem.Infrastructure/*.csproj ExcelImportSystem.Infrastructure/
 COPY ExcelImportSystem.API/*.csproj ExcelImportSystem.API/
 RUN dotnet restore ExcelImportSystem.API/ExcelImportSystem.API.csproj
 
-# Copy full source and publish
+# Copy full source and publish (re-restore to fix fallback folder paths)
 COPY . .
 RUN dotnet publish ExcelImportSystem.API/ExcelImportSystem.API.csproj \
     -c Release \
-    -o /app \
-    --no-restore
+    -o /app
 
 # ============================================
 # Stage 2: Runtime

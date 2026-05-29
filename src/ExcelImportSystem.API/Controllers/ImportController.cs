@@ -27,8 +27,13 @@ public class ImportController : ControllerBase
             if (request.File == null || request.File.Length == 0)
                 return BadRequest(ApiResponse<ImportPreviewDto>.Fail("No file uploaded"));
 
-            var preview = await _importService.PreviewAsync(request);
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var preview = await _importService.PreviewAsync(userId, request);
             return Ok(ApiResponse<ImportPreviewDto>.Ok(preview));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, ApiResponse<ImportPreviewDto>.Fail(ex.Message));
         }
         catch (KeyNotFoundException ex)
         {
@@ -42,29 +47,40 @@ public class ImportController : ControllerBase
 
     [HttpPost("execute")]
     [Authorize(Policy = "ImportExecute")]
-    public async Task<ActionResult<ApiResponse<ImportResultDto>>> Execute(
+    public ActionResult<ApiResponse<ImportExecuteResponseDto>> Execute(
         [FromForm] ImportRequestDto request, [FromForm] string mappings)
     {
         try
         {
             if (request.File == null || request.File.Length == 0)
-                return BadRequest(ApiResponse<ImportResultDto>.Fail("No file uploaded"));
+                return BadRequest(ApiResponse<ImportExecuteResponseDto>.Fail("No file uploaded"));
 
             var columnMappings = System.Text.Json.JsonSerializer.Deserialize<List<ColumnMappingDto>>(mappings,
                 new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true })
                 ?? throw new InvalidOperationException("Invalid column mappings");
 
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            var result = await _importService.ExecuteAsync(userId, request, columnMappings);
-
-            if (result.Success)
-                return Ok(ApiResponse<ImportResultDto>.Ok(result, result.Message));
-            else
-                return Ok(ApiResponse<ImportResultDto>.Ok(result, result.Message));
+            var response = _importService.ExecuteAsync(userId, request, columnMappings);
+            return Ok(ApiResponse<ImportExecuteResponseDto>.Ok(response, "Import started"));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, ApiResponse<ImportExecuteResponseDto>.Fail(ex.Message));
         }
         catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException or InvalidDataException)
         {
-            return BadRequest(ApiResponse<ImportResultDto>.Fail(ex.Message));
+            return BadRequest(ApiResponse<ImportExecuteResponseDto>.Fail(ex.Message));
         }
+    }
+
+    [HttpGet("progress/{taskId}")]
+    [Authorize(Policy = "ImportExecute")]
+    public ActionResult<ApiResponse<ImportProgressDto>> GetProgress(string taskId)
+    {
+        var progress = _importService.GetProgress(taskId);
+        if (progress == null)
+            return NotFound(ApiResponse<ImportProgressDto>.Fail("Task not found"));
+
+        return Ok(ApiResponse<ImportProgressDto>.Ok(progress));
     }
 }

@@ -1,13 +1,17 @@
 {
   "app": {
     "title": "Excel Import",
-    "titleShort": "EI"
+    "titleShort": "EI",
+    "copyright": "© 2026 huangshifang. All rights reserved."
   },
   "nav": {
     "dashboard": "Dashboard",
     "import": "Import Data",
     "importLogs": "Import Logs",
-    "userManagement": "User Management"
+    "loginAudit": "Login Audit",
+    "userManagement": "User Management",
+    "systemSettings": "System Settings",
+    "servers": "Servers"
   },
   "header": {
     "logout": "Logout"
@@ -16,12 +20,13 @@
     "title": "Login",
     "username": "Username",
     "password": "Password",
+    "captcha": "Captcha",
+    "captchaPlaceholder": "Enter captcha code",
     "submit": "Login",
-    "error": "Invalid username or password",
-    "hint": "Default: admin / admin123. Use your domain account if AD is enabled."
+    "error": "Invalid username or password"
   },
   "import": {
-    "pageTitle": "Excel Data Import",
+    "pageTitle": "Data Import",
     "stepConfigure": "Configure",
     "stepMapColumns": "Map Columns",
     "stepResult": "Result",
@@ -30,10 +35,12 @@
     "selectTable": "Table",
     "selectTablePlaceholder": "Select a table",
     "selectTableFirst": "Select a database first",
-    "uploadExcel": "Upload Excel File",
-    "uploadLabel": "Excel File (.xlsx)",
-    "uploadHint": "Supports .xlsx and .xls files",
-    "uploadText": "Click or drag Excel file here",
+    "uploadExcel": "Upload File",
+    "uploadLabel": "Excel / CSV File",
+    "uploadHint": "Supports .xlsx, .xls, and .csv files",
+    "uploadText": "Click or drag Excel/CSV file here",
+    "importing": "Importing...",
+    "starting": "Starting import...",
     "hasHeaderRow": "Has Header Row",
     "useTransaction": "Use Transaction",
     "batchSize": "Batch Size",
@@ -70,6 +77,7 @@
     "skip": "-- Skip --",
     "sampleData": "Sample Data",
     "empty": "(empty)",
+    "noColumnsFound": "No readable columns found. Please confirm the file is selected and retry.",
     "importSummary": "Import Summary"
   },
   "logs": {
@@ -95,7 +103,9 @@
     "error": "Error",
     "statusSuccess": "Success",
     "statusPartial": "Partial",
-    "statusFailed": "Failed"
+    "statusFailed": "Failed",
+    "server": "Server Instance",
+    "local": "Local"
   },
   "users": {
     "pageTitle": "User Management",
@@ -126,7 +136,19 @@
     "ldapSearchNoResults": "No AD users found",
     "linkLdapSuccess": "AD account linked successfully",
     "unlinkLdapSuccess": "AD account unlinked",
-    "unlinkLdapConfirm": "Unlink this user from AD? They will need a local password to log in."
+    "unlinkLdapConfirm": "Unlink this user from AD? They will need a local password to log in.",
+    "databaseAccess": "Database Access",
+    "databaseAccessTitle": "Database Access - {username}",
+    "databaseAccessHint": "Select which databases this user can import data into. Admins have access to all databases.",
+    "tableAccessHint": "Select databases and specific tables this user can import into. 'Select All Tables' grants access to the entire database. Admins automatically have full access.",
+    "selectAllTables": "Select All Tables",
+    "databaseAccessSave": "Save",
+    "databaseAccessSuccess": "Database access updated",
+    "noDatabaseAccess": "No database access granted",
+    "resetPassword": "Reset Password",
+    "resetPasswordTitle": "Reset Password - {username}",
+    "resetPasswordHint": "Set a new password with at least 6 characters",
+    "resetPasswordSuccess": "Password has been reset"
   },
   "dashboard": {
     "pageTitle": "Dashboard",
@@ -135,6 +157,50 @@
     "totalRows": "Total Rows",
     "successRows": "Success Rows",
     "failedRows": "Failed Rows"
+  },
+  "system": {
+    "pageTitle": "System Settings",
+    "ldapTitle": "LDAP / Active Directory Configuration",
+    "ldapHint": "LDAP settings are persisted to the database. Changes take effect immediately without restart. The bind password is stored encrypted.",
+    "ldapEnabled": "Enable LDAP",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "ldapServer": "Server",
+    "ldapPort": "Port",
+    "ldapDomain": "Domain",
+    "ldapBaseDn": "Base DN",
+    "ldapFilter": "User Filter Template",
+    "ldapBindUser": "Bind User DN",
+    "ldapBindPassword": "Bind Password",
+    "save": "Save Settings",
+    "saveSuccess": "LDAP settings saved",
+    "saveFailed": "Failed to save settings",
+    "loadFailed": "Failed to load settings",
+    "testTitle": "Test LDAP Connection",
+    "testButton": "Test Connection",
+    "testUsername": "Test Username",
+    "testPassword": "Test Password",
+    "testCredentialsRequired": "Please enter test username and password",
+    "testSuccess": "Connection successful",
+    "testFailed": "Authentication failed",
+    "testError": "Connection test error"
+  },
+  "changePassword": {
+    "title": "Change Password",
+    "oldPassword": "Old Password",
+    "newPassword": "New Password",
+    "confirmPassword": "Confirm New Password",
+    "passwordMismatch": "Passwords do not match",
+    "minLength": "Password must be at least 6 characters",
+    "success": "Password changed successfully. Please log in again.",
+    "failed": "Failed to change password"
+  },
+  "loginAudit": {
+    "pageTitle": "Login Audit Logs",
+    "searchUsername": "Search username...",
+    "failureReason": "Failure Reason",
+    "ipAddress": "IP Address",
+    "userAgent": "User Agent"
   },
   "common": {
     "loading": "Loading...",

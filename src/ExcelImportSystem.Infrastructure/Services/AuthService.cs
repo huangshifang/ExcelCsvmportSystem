@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using ExcelImportSystem.Core.DTOs;
 using ExcelImportSystem.Core.Entities;
@@ -16,19 +17,58 @@ public class AuthService : IAuthService
     private readonly AppDbContext _context;
     private readonly IConfiguration _configuration;
     private readonly ILdapService _ldapService;
+    private readonly ICaptchaService _captchaService;
+    private readonly ILoginAuditService _auditService;
+    private readonly ILogger<AuthService> _logger;
+    private const int MaxFailedAttempts = 5;
+    private const int LockoutMinutes = 15;
 
-    public AuthService(AppDbContext context, IConfiguration configuration, ILdapService ldapService)
+    public AuthService(
+        AppDbContext context,
+        IConfiguration configuration,
+        ILdapService ldapService,
+        ICaptchaService captchaService,
+        ILoginAuditService auditService,
+        ILogger<AuthService> logger)
     {
         _context = context;
         _configuration = configuration;
         _ldapService = ldapService;
+        _captchaService = captchaService;
+        _auditService = auditService;
+        _logger = logger;
     }
 
     public async Task<LoginResponseDto> LoginAsync(LoginDto dto)
     {
+        // Validate CAPTCHA (required for every login)
+        if (!_captchaService.Validate(dto.CaptchaToken ?? "", dto.CaptchaCode ?? ""))
+        {
+            _logger.LogWarning("Login failed for '{Username}': invalid captcha", dto.Username);
+            await _auditService.LogAsync(dto.Username, false, "Invalid captcha");
+            throw new UnauthorizedAccessException("Invalid captcha code");
+        }
+
         var user = await _context.Users
             .Include(u => u.UserRoles).ThenInclude(ur => ur.Role).ThenInclude(r => r.RolePermissions)
             .FirstOrDefaultAsync(u => u.Username == dto.Username && u.IsActive);
+
+        // Check account lockout
+        if (user != null && user.LockoutEnd.HasValue && user.LockoutEnd.Value > DateTime.UtcNow)
+        {
+            var remaining = (int)(user.LockoutEnd.Value - DateTime.UtcNow).TotalMinutes;
+            _logger.LogWarning("Login blocked for locked account '{Username}': {Minutes} min remaining", dto.Username, remaining);
+            await _auditService.LogAsync(dto.Username, false, "Account locked");
+            throw new UnauthorizedAccessException($"Account is locked. Try again in {remaining + 1} minutes.");
+        }
+
+        // Reset failed counter when lockout has expired, so user gets a fresh set of attempts
+        if (user != null && user.LockoutEnd.HasValue && user.LockoutEnd.Value <= DateTime.UtcNow
+            && user.FailedLoginCount >= MaxFailedAttempts)
+        {
+            user.FailedLoginCount = 0;
+            user.LockoutEnd = null;
+        }
 
         // Phase 1: Try local auth for Local users
         if (user != null && user.AuthType == "Local")
@@ -36,9 +76,24 @@ public class AuthService : IAuthService
             if (BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
             {
                 user.LastLoginAt = DateTime.UtcNow;
+                user.FailedLoginCount = 0;
+                user.LockoutEnd = null;
                 await _context.SaveChangesAsync();
+                _logger.LogInformation("User '{Username}' logged in successfully", dto.Username);
+                await _auditService.LogAsync(dto.Username, true, null);
                 return BuildLoginResponse(user);
             }
+
+            // Failed attempt
+            user.FailedLoginCount++;
+            if (user.FailedLoginCount >= MaxFailedAttempts)
+            {
+                user.LockoutEnd = DateTime.UtcNow.AddMinutes(LockoutMinutes);
+                _logger.LogWarning("Account '{Username}' locked after {Count} failed attempts", dto.Username, user.FailedLoginCount);
+            }
+            await _context.SaveChangesAsync();
+            _logger.LogWarning("Login failed for '{Username}': invalid password (attempt {Count}/{Max})", dto.Username, user.FailedLoginCount, MaxFailedAttempts);
+            await _auditService.LogAsync(dto.Username, false, "Invalid password");
             throw new UnauthorizedAccessException("Invalid username or password");
         }
 
@@ -81,12 +136,15 @@ public class AuthService : IAuthService
             }
             else
             {
-                // Local user whose username collides with an AD account
+                _logger.LogWarning("Login failed for '{Username}': AD account collides with local account", dto.Username);
+                await _auditService.LogAsync(dto.Username, false, "AD collision with local account");
                 throw new UnauthorizedAccessException(
                     "This account uses local authentication. Please use your local password.");
             }
 
             user.LastLoginAt = DateTime.UtcNow;
+            user.FailedLoginCount = 0;
+            user.LockoutEnd = null;
             await _context.SaveChangesAsync();
 
             // Reload with permissions
@@ -94,12 +152,24 @@ public class AuthService : IAuthService
                 .Include(u => u.UserRoles).ThenInclude(ur => ur.Role).ThenInclude(r => r.RolePermissions)
                 .FirstAsync(u => u.Id == user.Id);
 
+            _logger.LogInformation("User '{Username}' logged in via LDAP", dto.Username);
+            await _auditService.LogAsync(dto.Username, true, null);
             return BuildLoginResponse(user);
         }
 
-        if (user != null && user.AuthType == "LDAP")
-            throw new UnauthorizedAccessException("Invalid username or password");
-
+        // Failed LDAP auth
+        if (user != null)
+        {
+            user.FailedLoginCount++;
+            if (user.FailedLoginCount >= MaxFailedAttempts)
+            {
+                user.LockoutEnd = DateTime.UtcNow.AddMinutes(LockoutMinutes);
+                _logger.LogWarning("Account '{Username}' locked after {Count} failed LDAP attempts", dto.Username, user.FailedLoginCount);
+            }
+            await _context.SaveChangesAsync();
+        }
+        _logger.LogWarning("Login failed for '{Username}': invalid credentials", dto.Username);
+        await _auditService.LogAsync(dto.Username, false, "Invalid credentials");
         throw new UnauthorizedAccessException("Invalid username or password");
     }
 
@@ -126,6 +196,19 @@ public class AuthService : IAuthService
             throw new UnauthorizedAccessException("Current password is incorrect");
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<bool> ResetPasswordAsync(int userId, string newPassword)
+    {
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null) throw new KeyNotFoundException("User not found");
+
+        if (user.AuthType == "LDAP")
+            throw new InvalidOperationException("Cannot reset password for LDAP users.");
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
         await _context.SaveChangesAsync();
         return true;
     }
@@ -166,13 +249,16 @@ public class AuthService : IAuthService
             throw new InvalidOperationException("Username already exists");
 
         var authType = dto.AuthType ?? "Local";
+        if (authType == "Local" && string.IsNullOrEmpty(dto.Password))
+            throw new InvalidOperationException("Password is required for Local authentication users");
+
         var user = new User
         {
             Username = dto.Username,
             AuthType = authType,
             LdapDn = dto.LdapDn,
-            PasswordHash = authType == "Local" && !string.IsNullOrEmpty(dto.Password)
-                ? BCrypt.Net.BCrypt.HashPassword(dto.Password)
+            PasswordHash = authType == "Local"
+                ? BCrypt.Net.BCrypt.HashPassword(dto.Password!)
                 : "",
             DisplayName = dto.DisplayName,
             Email = dto.Email ?? "",

@@ -3,6 +3,8 @@ namespace ExcelImportSystem.Core.DTOs;
 public class DatabaseInfoDto
 {
     public string Name { get; set; } = string.Empty;
+    public int? ServerId { get; set; }
+    public string? ServerName { get; set; }
 }
 
 public class TableInfoDto

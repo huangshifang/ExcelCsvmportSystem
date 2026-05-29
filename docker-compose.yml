@@ -3,32 +3,12 @@
 # ============================================
 # Usage:
 #   1. cp .env.docker .env   (edit if needed)
-#   2. docker-compose up -d
+#   2. docker compose up -d
 #   3. Open http://localhost
 #   4. Login: admin / admin123
 # ============================================
 
 services:
-  # ===== SQL Server =====
-  db:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    restart: unless-stopped
-    environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: ${SA_PASSWORD}
-    ports:
-      - "1433:1433"
-    volumes:
-      - sqldata:/var/opt/mssql
-    healthcheck:
-      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$${SA_PASSWORD}" -Q "SELECT 1" -C
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    networks:
-      - app-network
-
   # ===== ASP.NET Core API =====
   api:
     build:
@@ -36,36 +16,36 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
+      - TZ=Asia/Shanghai
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5000
-      - ConnectionStrings__DefaultConnection=Server=db;Database=ExcelImportDb;User ID=sa;Password=${SA_PASSWORD};TrustServerCertificate=True;MultipleActiveResultSets=true
+      - ConnectionStrings__DefaultConnection=Server=host.docker.internal;Database=ExcelImportDb;User ID=excel_user;Password=sh.12345;TrustServerCertificate=True;MultipleActiveResultSets=true
       - Jwt__Key=${JWT_KEY}
       - Jwt__Issuer=ExcelImportSystem
       - Jwt__Audience=ExcelImportSystem
       - Jwt__ExpireHours=24
       - Ldap__Enabled=${LDAP_ENABLED:-false}
-    depends_on:
-      db:
-        condition: service_healthy
+    ports:
+      - "5001:5000"
     networks:
       - app-network
 
-  # ===== React Frontend (Nginx) =====
+  # ===== React Frontend (Nginx + HTTPS) =====
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ./offline-deploy/nginx-https.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./offline-deploy/certs:/etc/nginx/certs:ro
     depends_on:
       - api
     networks:
       - app-network
-
-volumes:
-  sqldata:
-    driver: local
 
 networks:
   app-network:

@@ -11,11 +11,16 @@ namespace ExcelImportSystem.Infrastructure.Services;
 public partial class TableService : ITableService
 {
     private readonly AppDbContext _context;
+    private readonly IDatabaseAccessService _dbAccessService;
+    private readonly IConnectionFactory _connectionFactory;
     private readonly ILogger<TableService> _logger;
 
-    public TableService(AppDbContext context, ILogger<TableService> logger)
+    public TableService(AppDbContext context, IDatabaseAccessService dbAccessService,
+        IConnectionFactory connectionFactory, ILogger<TableService> logger)
     {
         _context = context;
+        _dbAccessService = dbAccessService;
+        _connectionFactory = connectionFactory;
         _logger = logger;
     }
 
@@ -51,47 +56,81 @@ public partial class TableService : ITableService
         return (database, schema, tableName);
     }
 
-    public async Task<List<DatabaseInfoDto>> GetDatabasesAsync()
+    public async Task<List<DatabaseInfoDto>> GetDatabasesAsync(int? userId = null)
     {
-        var connection = _context.Database.GetDbConnection();
-        await connection.OpenAsync();
+        var allDbs = new List<DatabaseInfoDto>();
+
+        // Local server
+        var localConn = _context.Database.GetDbConnection();
+        await localConn.OpenAsync();
         try
         {
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT name FROM sys.databases WHERE state = 0 ORDER BY name";
-
-            var list = new List<DatabaseInfoDto>();
+            using var cmd = localConn.CreateCommand();
+            cmd.CommandText = "SELECT name FROM sys.databases WHERE state = 0 AND HAS_DBACCESS(name) = 1 ORDER BY name";
             using var reader = await cmd.ExecuteReaderAsync();
             while (await reader.ReadAsync())
-                list.Add(new DatabaseInfoDto { Name = reader.GetString(0) });
-            return list;
+                allDbs.Add(new DatabaseInfoDto { Name = reader.GetString(0), ServerId = null, ServerName = null });
         }
-        finally
+        finally { localConn.Close(); }
+
+        // Remote servers
+        var servers = await _connectionFactory.GetServersAsync();
+        foreach (var server in servers.Where(s => s.IsActive))
         {
-            connection.Close();
+            try
+            {
+                using var conn = await _connectionFactory.CreateConnectionAsync(server.Id);
+                await conn.OpenAsync();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT name FROM sys.databases WHERE state = 0 AND HAS_DBACCESS(name) = 1 ORDER BY name";
+                using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                    allDbs.Add(new DatabaseInfoDto { Name = reader.GetString(0), ServerId = server.Id, ServerName = server.Name });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to list databases on server '{Server}'", server.Name);
+            }
         }
+
+        // Non-admin filtering
+        if (userId.HasValue)
+        {
+            var userRoles = await _context.UserRoles
+                .Where(ur => ur.UserId == userId.Value).Select(ur => ur.Role.Name).ToListAsync();
+            if (!userRoles.Contains("Admin"))
+            {
+                var accesses = await _dbAccessService.GetUserTableAccessesAsync(userId.Value);
+                var grantedSet = new HashSet<(int? Sid, string Db)>(
+                    accesses.Select(a => ((int?)a.ServerId, a.DatabaseName)));
+                allDbs = allDbs.Where(d => grantedSet.Contains((d.ServerId, d.Name))).ToList();
+            }
+        }
+
+        return allDbs.OrderBy(d => d.ServerName ?? "").ThenBy(d => d.Name).ToList();
     }
 
-    public async Task<List<TableInfoDto>> GetTablesAsync(string database, string? schema = null)
+    public async Task<List<TableInfoDto>> GetTablesAsync(string database, string? schema = null, int? userId = null, int? serverId = null)
     {
-        var connection = _context.Database.GetDbConnection();
+        if (!SafeSqlName().IsMatch(database))
+            throw new ArgumentException($"Invalid database name: {database}");
+
+        var connection = await _connectionFactory.CreateConnectionAsync(serverId);
         await connection.OpenAsync();
         try
         {
-            // Build dynamic SQL with 3-part naming — names are validated by QualifiedName
+            connection.ChangeDatabase(database);
+
             var whereSchema = string.IsNullOrEmpty(schema)
                 ? ""
                 : $"AND TABLE_SCHEMA = @schema";
 
             var sql = $@"
                 SELECT TABLE_SCHEMA, TABLE_NAME
-                FROM {Quote(database)}.INFORMATION_SCHEMA.TABLES
+                FROM INFORMATION_SCHEMA.TABLES
                 WHERE TABLE_TYPE = 'BASE TABLE'
                 {whereSchema}
                 ORDER BY TABLE_SCHEMA, TABLE_NAME";
-
-            if (!SafeSqlName().IsMatch(database))
-                throw new ArgumentException($"Invalid database name: {database}");
 
             using var cmd = connection.CreateCommand();
             cmd.CommandText = sql;
@@ -115,6 +154,37 @@ public partial class TableService : ITableService
                     TableName = reader.GetString(1)
                 });
             }
+
+            // Filter tables by access for non-admin users
+            if (userId.HasValue)
+            {
+                var userRoles = await _context.UserRoles
+                    .Where(ur => ur.UserId == userId.Value)
+                    .Select(ur => ur.Role.Name)
+                    .ToListAsync();
+
+                if (!userRoles.Contains("Admin"))
+                {
+                    var accesses = await _dbAccessService.GetUserTableAccessesAsync(userId.Value);
+                    var wildcardDb = accesses.Any(a =>
+                        a.DatabaseName.Equals(database, StringComparison.OrdinalIgnoreCase)
+                        && a.TableName == null);
+
+                    if (!wildcardDb)
+                    {
+                        var grantedTables = accesses
+                            .Where(a => a.DatabaseName.Equals(database, StringComparison.OrdinalIgnoreCase)
+                                && a.TableName != null)
+                            .Select(a => (Schema: a.SchemaName ?? "dbo", TableName: a.TableName!))
+                            .ToHashSet();
+
+                        tables = tables.Where(t =>
+                            grantedTables.Contains((t.Schema, t.TableName))
+                        ).ToList();
+                    }
+                }
+            }
+
             return tables;
         }
         catch (Exception ex)
@@ -128,25 +198,27 @@ public partial class TableService : ITableService
         }
     }
 
-    public async Task<TableInfoDto?> GetTableAsync(string database, string tableName, string schema = "dbo")
+    public async Task<TableInfoDto?> GetTableAsync(string database, string tableName, string schema = "dbo", int? userId = null, int? serverId = null)
     {
-        var connection = _context.Database.GetDbConnection();
+        if (!SafeSqlName().IsMatch(database))
+            throw new ArgumentException($"Invalid database name: {database}");
+        if (!SafeSqlName().IsMatch(schema))
+            throw new ArgumentException($"Invalid schema name: {schema}");
+        AssertValidTableName(tableName);
+
+        var connection = await _connectionFactory.CreateConnectionAsync(serverId);
         await connection.OpenAsync();
         try
         {
-            if (!SafeSqlName().IsMatch(database))
-                throw new ArgumentException($"Invalid database name: {database}");
-            if (!SafeSqlName().IsMatch(schema))
-                throw new ArgumentException($"Invalid schema name: {schema}");
-            AssertValidTableName(tableName);
+            connection.ChangeDatabase(database);
 
             // 1. Columns
             var columns = new List<ColumnInfoDto>();
-            var colSql = $@"
+            var colSql = @"
                 SELECT COLUMN_NAME, DATA_TYPE,
                        CASE WHEN IS_NULLABLE = 'YES' THEN 1 ELSE 0 END,
                        CHARACTER_MAXIMUM_LENGTH
-                FROM {Quote(database)}.INFORMATION_SCHEMA.COLUMNS
+                FROM INFORMATION_SCHEMA.COLUMNS
                 WHERE TABLE_NAME = @tableName AND TABLE_SCHEMA = @schema
                 ORDER BY ORDINAL_POSITION";
 
@@ -171,16 +243,16 @@ public partial class TableService : ITableService
 
             if (columns.Count == 0) return null;
 
-            // 2. Primary keys — use sys schema directly for cross-db compatibility
+            // 2. Primary keys
             var pkColumns = new List<string>();
-            var pkSql = $@"
+            var pkSql = @"
                 SELECT c.name
-                FROM {Quote(database)}.sys.indexes i
-                JOIN {Quote(database)}.sys.index_columns ic
+                FROM sys.indexes i
+                JOIN sys.index_columns ic
                     ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-                JOIN {Quote(database)}.sys.columns c
+                JOIN sys.columns c
                     ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-                JOIN {Quote(database)}.sys.tables t
+                JOIN sys.tables t
                     ON i.object_id = t.object_id
                 WHERE i.is_primary_key = 1 AND t.name = @tableName";
 
@@ -196,12 +268,12 @@ public partial class TableService : ITableService
 
             // 3. Identity columns
             var identityColumns = new List<string>();
-            var idSql = $@"
+            var idSql = @"
                 SELECT c.name
-                FROM {Quote(database)}.sys.identity_columns ic
-                JOIN {Quote(database)}.sys.columns c
+                FROM sys.identity_columns ic
+                JOIN sys.columns c
                     ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-                JOIN {Quote(database)}.sys.tables t
+                JOIN sys.tables t
                     ON c.object_id = t.object_id
                 WHERE t.name = @tableName";
 

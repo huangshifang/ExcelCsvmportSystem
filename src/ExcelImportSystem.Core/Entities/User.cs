@@ -12,6 +12,9 @@ public class User
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastLoginAt { get; set; }
+    public int FailedLoginCount { get; set; }
+    public DateTime? LockoutEnd { get; set; }
 
     public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
+    public ICollection<UserDatabaseAccess> DatabaseAccesses { get; set; } = new List<UserDatabaseAccess>();
 }

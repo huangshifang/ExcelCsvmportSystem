@@ -19,6 +19,17 @@ export interface LoginResponse {
 export interface LoginRequest {
   username: string;
   password: string;
+  captchaCode?: string;
+  captchaToken?: string;
+}
+
+export interface ChangePasswordRequest {
+  oldPassword: string;
+  newPassword: string;
+}
+
+export interface ResetPasswordRequest {
+  newPassword: string;
 }
 
 export interface CreateUserRequest {
@@ -63,8 +74,47 @@ export interface RolePermission {
   permission: string;
 }
 
+export interface SqlServerInstance {
+  id: number;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CreateServerRequest {
+  name: string;
+  connectionString: string;
+  description?: string;
+}
+
+export interface UpdateServerRequest {
+  name?: string;
+  connectionString?: string;
+  description?: string;
+  isActive?: boolean;
+}
+
 export interface DatabaseInfo {
   name: string;
+  serverId?: number;
+  serverName?: string;
+}
+
+export interface UserTableAccess {
+  serverId?: number;
+  databaseName: string;
+  schemaName?: string;
+  tableName?: string;
+}
+
+export interface UserDatabaseAccess {
+  userId: number;
+  databaseName: string;
+  schemaName?: string;
+  tableName?: string;
+  grantedBy?: string;
+  grantedAt?: string;
 }
 
 export interface TableInfo {
@@ -127,6 +177,8 @@ export interface ImportLog {
   failedRows: number;
   status: string;
   errorMessage?: string;
+  serverId?: number;
+  serverName?: string;
   importedAt: string;
 }
 
@@ -142,6 +194,46 @@ export interface PagedResult<T> {
   page: number;
   pageSize: number;
   items: T[];
+}
+
+export interface LdapSettings {
+  enabled: boolean;
+  server: string;
+  port: number;
+  useSsl: boolean;
+  domain: string;
+  baseDn: string;
+  userFilterTemplate: string;
+  bindUserDn: string;
+  bindPassword?: string;
+  bindPasswordSet: boolean;
+  testUsername?: string;
+  testPassword?: string;
+}
+
+export interface LoginAuditLog {
+  id: number;
+  username: string;
+  ipAddress?: string;
+  userAgent?: string;
+  success: boolean;
+  failureReason?: string;
+  timestamp: string;
+}
+
+export interface ImportExecuteResponse {
+  taskId: string;
+}
+
+export interface ImportProgress {
+  taskId: string;
+  status: 'pending' | 'reading' | 'importing' | 'completed' | 'failed';
+  percent: number;
+  totalRows: number;
+  processedRows: number;
+  message: string;
+  errorCount: number;
+  result?: ImportResult;
 }
 
 export interface ApiResponse<T> {

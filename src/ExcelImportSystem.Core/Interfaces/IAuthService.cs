@@ -7,6 +7,7 @@ public interface IAuthService
     Task<LoginResponseDto> LoginAsync(LoginDto dto);
     Task<UserInfoDto> GetUserInfoAsync(int userId);
     Task<bool> ChangePasswordAsync(int userId, ChangePasswordDto dto);
+    Task<bool> ResetPasswordAsync(int userId, string newPassword);
     Task<PagedResult<UserInfoDto>> GetUsersAsync(int page, int pageSize, string? search = null);
     Task<UserInfoDto> CreateUserAsync(CreateUserDto dto);
     Task<UserInfoDto> UpdateUserAsync(int userId, UpdateUserDto dto);

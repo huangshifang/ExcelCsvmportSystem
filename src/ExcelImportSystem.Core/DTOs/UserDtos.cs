@@ -9,6 +9,9 @@ public class LoginDto
 
     [Required]
     public string Password { get; set; } = string.Empty;
+
+    public string? CaptchaToken { get; set; }
+    public string? CaptchaCode { get; set; }
 }
 
 public class LoginResponseDto
@@ -35,6 +38,13 @@ public class ChangePasswordDto
 {
     [Required]
     public string OldPassword { get; set; } = string.Empty;
+    [Required]
+    [MinLength(6)]
+    public string NewPassword { get; set; } = string.Empty;
+}
+
+public class ResetPasswordDto
+{
     [Required]
     [MinLength(6)]
     public string NewPassword { get; set; } = string.Empty;
@@ -68,6 +78,12 @@ public class LinkLdapDto
 {
     [Required]
     public string Username { get; set; } = string.Empty;
+}
+
+public class CaptchaResponseDto
+{
+    public string Token { get; set; } = string.Empty;
+    public string ImageBase64 { get; set; } = string.Empty;
 }
 
 public class LdapSearchResultDto

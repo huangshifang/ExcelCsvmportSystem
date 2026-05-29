@@ -1,7 +1,6 @@
 using System.DirectoryServices.Protocols;
 using System.Net;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using ExcelImportSystem.Core.Configurations;
 using ExcelImportSystem.Core.DTOs;
 using ExcelImportSystem.Core.Interfaces;
@@ -10,19 +9,21 @@ namespace ExcelImportSystem.Infrastructure.Services;
 
 public class LdapService : ILdapService
 {
-    private readonly LdapSettings _settings;
+    private readonly LdapSettingsProvider _provider;
     private readonly ILogger<LdapService> _logger;
 
-    public LdapService(IOptions<LdapSettings> settings, ILogger<LdapService> logger)
+    public LdapService(LdapSettingsProvider provider, ILogger<LdapService> logger)
     {
-        _settings = settings.Value;
+        _provider = provider;
         _logger = logger;
     }
 
     public async Task<(bool Success, string? Dn, string? DisplayName, string? Email)> AuthenticateAsync(
         string username, string password)
     {
-        if (!_settings.Enabled)
+        var settings = await _provider.GetSettingsAsync();
+
+        if (!settings.Enabled)
             return (false, null, null, null);
 
         try
@@ -31,7 +32,7 @@ public class LdapService : ILdapService
             if (lookup.Dn == null)
                 return (false, null, null, null);
 
-            using var connection = CreateConnection();
+            using var connection = CreateConnection(settings);
             connection.Bind(new NetworkCredential(lookup.Dn, password));
             return (true, lookup.Dn, lookup.DisplayName, lookup.Email);
         }
@@ -47,22 +48,24 @@ public class LdapService : ILdapService
         }
     }
 
-    public Task<(string? Dn, string? DisplayName, string? Email)> LookupUserAsync(string username)
+    public async Task<(string? Dn, string? DisplayName, string? Email)> LookupUserAsync(string username)
     {
-        return Task.Run(() =>
+        var settings = await _provider.GetSettingsAsync();
+
+        return await Task.Run(() =>
         {
             try
             {
-                using var connection = CreateConnection();
+                using var connection = CreateConnection(settings);
 
-                if (!string.IsNullOrWhiteSpace(_settings.BindUserDn))
+                if (!string.IsNullOrWhiteSpace(settings.BindUserDn))
                 {
-                    connection.Bind(new NetworkCredential(_settings.BindUserDn, _settings.BindPassword));
+                    connection.Bind(new NetworkCredential(settings.BindUserDn, settings.BindPassword));
                 }
 
-                var filter = string.Format(_settings.UserFilterTemplate, EscapeLdapFilter(username));
+                var filter = string.Format(settings.UserFilterTemplate, EscapeLdapFilter(username));
                 var request = new SearchRequest(
-                    _settings.BaseDn,
+                    settings.BaseDn,
                     filter,
                     SearchScope.Subtree,
                     "distinguishedName", "displayName", "mail", "sAMAccountName");
@@ -86,29 +89,31 @@ public class LdapService : ILdapService
         });
     }
 
-    public Task<List<LdapSearchResultDto>> SearchUsersAsync(string? search)
+    public async Task<List<LdapSearchResultDto>> SearchUsersAsync(string? search)
     {
-        return Task.Run(() =>
+        var settings = await _provider.GetSettingsAsync();
+
+        return await Task.Run(() =>
         {
             var results = new List<LdapSearchResultDto>();
 
-            if (!_settings.Enabled)
+            if (!settings.Enabled)
                 return results;
 
             try
             {
-                using var connection = CreateConnection();
+                using var connection = CreateConnection(settings);
 
-                if (!string.IsNullOrWhiteSpace(_settings.BindUserDn))
+                if (!string.IsNullOrWhiteSpace(settings.BindUserDn))
                 {
-                    connection.Bind(new NetworkCredential(_settings.BindUserDn, _settings.BindPassword));
+                    connection.Bind(new NetworkCredential(settings.BindUserDn, settings.BindPassword));
                 }
 
                 var pattern = string.IsNullOrWhiteSpace(search) ? "*" : $"*{EscapeLdapFilter(search)}*";
-                var filter = string.Format(_settings.UserFilterTemplate, pattern);
+                var filter = string.Format(settings.UserFilterTemplate, pattern);
 
                 var request = new SearchRequest(
-                    _settings.BaseDn,
+                    settings.BaseDn,
                     filter,
                     SearchScope.Subtree,
                     "distinguishedName", "displayName", "mail", "sAMAccountName");
@@ -135,16 +140,16 @@ public class LdapService : ILdapService
         });
     }
 
-    private LdapConnection CreateConnection()
+    private static LdapConnection CreateConnection(LdapSettings settings)
     {
-        var identifier = new LdapDirectoryIdentifier(_settings.Server, _settings.Port);
+        var identifier = new LdapDirectoryIdentifier(settings.Server, settings.Port);
         var connection = new LdapConnection(identifier)
         {
             AuthType = AuthType.Basic,
             SessionOptions =
             {
                 ProtocolVersion = 3,
-                SecureSocketLayer = _settings.UseSsl
+                SecureSocketLayer = settings.UseSsl
             }
         };
 

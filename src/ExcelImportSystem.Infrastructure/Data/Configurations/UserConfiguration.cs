@@ -56,6 +56,34 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
     }
 }
 
+public class UserDatabaseAccessConfiguration : IEntityTypeConfiguration<UserDatabaseAccess>
+{
+    public void Configure(EntityTypeBuilder<UserDatabaseAccess> builder)
+    {
+        builder.ToTable("UserDatabaseAccesses");
+        builder.HasKey(uda => uda.Id);
+        builder.Property(uda => uda.DatabaseName).HasMaxLength(200).IsRequired();
+        builder.Property(uda => uda.SchemaName).HasMaxLength(200);
+        builder.Property(uda => uda.TableName).HasMaxLength(200);
+        builder.Property(uda => uda.GrantedBy).HasMaxLength(200);
+        builder.HasOne(uda => uda.User).WithMany(u => u.DatabaseAccesses).HasForeignKey(uda => uda.UserId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(uda => uda.Server).WithMany().HasForeignKey(uda => uda.ServerId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasIndex(uda => new { uda.UserId, uda.ServerId, uda.DatabaseName, uda.SchemaName, uda.TableName });
+    }
+}
+
+public class SystemSettingConfiguration : IEntityTypeConfiguration<SystemSetting>
+{
+    public void Configure(EntityTypeBuilder<SystemSetting> builder)
+    {
+        builder.ToTable("SystemSettings");
+        builder.HasKey(s => s.Id);
+        builder.Property(s => s.Key).HasMaxLength(200).IsRequired();
+        builder.HasIndex(s => s.Key).IsUnique();
+        builder.Property(s => s.Value).IsRequired();
+    }
+}
+
 public class ImportLogConfiguration : IEntityTypeConfiguration<ImportLog>
 {
     public void Configure(EntityTypeBuilder<ImportLog> builder)

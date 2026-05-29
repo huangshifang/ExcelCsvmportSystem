@@ -65,6 +65,12 @@ export default function ImportLogsPage() {
       key: 'targetTable',
     },
     {
+      title: t('logs.server'),
+      dataIndex: 'serverName',
+      key: 'serverName',
+      render: (v: string | undefined) => v || t('logs.local'),
+    },
+    {
       title: t('logs.user'),
       dataIndex: 'userName',
       key: 'userName',
@@ -112,7 +118,7 @@ export default function ImportLogsPage() {
       dataIndex: 'importedAt',
       key: 'importedAt',
       width: 180,
-      render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm:ss'),
+      render: (v: string) => dayjs(v + 'Z').format('YYYY-MM-DD HH:mm:ss'),
     },
     {
       title: t('logs.actions'),
@@ -222,9 +228,12 @@ export default function ImportLogsPage() {
             <Descriptions.Item label={t('logs.targetTable')} span={2}>
               {selectedLog.targetTable}
             </Descriptions.Item>
+            <Descriptions.Item label={t('logs.server')} span={2}>
+              {selectedLog.serverName || t('logs.local')}
+            </Descriptions.Item>
             <Descriptions.Item label={t('logs.user')}>{selectedLog.userName}</Descriptions.Item>
             <Descriptions.Item label={t('logs.date')}>
-              {dayjs(selectedLog.importedAt).format('YYYY-MM-DD HH:mm:ss')}
+              {dayjs(selectedLog.importedAt + 'Z').format('YYYY-MM-DD HH:mm:ss')}
             </Descriptions.Item>
             <Descriptions.Item label={t('import.totalRows')}>{selectedLog.totalRows}</Descriptions.Item>
             <Descriptions.Item label={t('logs.successRows')}>{selectedLog.successRows}</Descriptions.Item>

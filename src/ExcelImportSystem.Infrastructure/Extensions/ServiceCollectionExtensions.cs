@@ -18,12 +18,19 @@ public static class ServiceCollectionExtensions
                 sqlOptions => sqlOptions.EnableRetryOnFailure(3)));
 
         services.Configure<LdapSettings>(configuration.GetSection(LdapSettings.Section));
+
+        services.AddScoped<ISystemSettingsService, SystemSettingsService>();
+        services.AddSingleton<LdapSettingsProvider>();
         services.AddSingleton<ILdapService, LdapService>();
 
+        services.AddSingleton<ICaptchaService, CaptchaService>();
+        services.AddSingleton<IConnectionFactory, ConnectionFactory>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<ITableService, TableService>();
         services.AddScoped<IImportService, ImportService>();
         services.AddScoped<IImportLogService, ImportLogService>();
+        services.AddScoped<IDatabaseAccessService, DatabaseAccessService>();
+        services.AddScoped<ILoginAuditService, LoginAuditService>();
 
         return services;
     }

@@ -20,6 +20,8 @@ public class ImportLogDto
     public int FailedRows { get; set; }
     public string Status { get; set; } = string.Empty;
     public string? ErrorMessage { get; set; }
+    public int? ServerId { get; set; }
+    public string? ServerName { get; set; }
     public DateTime ImportedAt { get; set; }
 }
 
@@ -29,6 +31,17 @@ public class PagedResult<T>
     public int Page { get; set; }
     public int PageSize { get; set; }
     public List<T> Items { get; set; } = new();
+}
+
+public class LoginAuditLogDto
+{
+    public int Id { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public string? IpAddress { get; set; }
+    public string? UserAgent { get; set; }
+    public bool Success { get; set; }
+    public string? FailureReason { get; set; }
+    public DateTime Timestamp { get; set; }
 }
 
 public class ApiResponse<T>
@@ -48,4 +61,12 @@ public class ApiResponse : ApiResponse<object>
 {
     public static ApiResponse Ok() => new() { Success = true };
     public new static ApiResponse Fail(string message) => new() { Success = false, Message = message };
+}
+
+public class UserTableAccessDto
+{
+    public int? ServerId { get; set; }
+    public string DatabaseName { get; set; } = string.Empty;
+    public string? SchemaName { get; set; }
+    public string? TableName { get; set; }
 }

@@ -4,6 +4,7 @@ namespace ExcelImportSystem.Core.DTOs;
 
 public class ImportRequestDto
 {
+    public int? ServerId { get; set; }
     public string Database { get; set; } = string.Empty;
     public string TableName { get; set; } = string.Empty;
     public string Schema { get; set; } = "dbo";
@@ -37,4 +38,21 @@ public class ImportResultDto
     public int FailedRows { get; set; }
     public List<string> Errors { get; set; } = new();
     public int? ImportLogId { get; set; }
+}
+
+public class ImportExecuteResponseDto
+{
+    public string TaskId { get; set; } = string.Empty;
+}
+
+public class ImportProgressDto
+{
+    public string TaskId { get; set; } = string.Empty;
+    public string Status { get; set; } = "pending"; // pending | reading | importing | completed | failed
+    public int Percent { get; set; }
+    public int TotalRows { get; set; }
+    public int ProcessedRows { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int ErrorCount { get; set; }
+    public ImportResultDto? Result { get; set; }
 }

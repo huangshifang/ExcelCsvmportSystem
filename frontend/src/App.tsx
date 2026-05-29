@@ -13,6 +13,9 @@ import DashboardPage from './pages/Dashboard/DashboardPage';
 import ImportPage from './pages/Import/ImportPage';
 import ImportLogsPage from './pages/ImportLogs/ImportLogsPage';
 import UsersPage from './pages/Users/UsersPage';
+import SystemSettingsPage from './pages/System/SystemSettingsPage';
+import LoginAuditPage from './pages/LoginAudit/LoginAuditPage';
+import ServersPage from './pages/Servers/ServersPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token, loading } = useAuth();
@@ -68,6 +71,9 @@ function AppRoutes() {
         <Route path="import" element={<ImportPage />} />
         <Route path="import-logs" element={<ImportLogsPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="login-logs" element={<LoginAuditPage />} />
+        <Route path="servers" element={<ServersPage />} />
+        <Route path="system" element={<SystemSettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

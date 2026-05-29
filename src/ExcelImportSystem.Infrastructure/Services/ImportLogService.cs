@@ -46,6 +46,8 @@ public class ImportLogService : IImportLogService
                 FailedRows = l.FailedRows,
                 Status = l.Status,
                 ErrorMessage = l.ErrorMessage,
+                ServerId = l.ServerId,
+                ServerName = l.ServerName,
                 ImportedAt = l.ImportedAt
             })
             .ToListAsync();
@@ -91,6 +93,8 @@ public class ImportLogService : IImportLogService
                 FailedRows = l.FailedRows,
                 Status = l.Status,
                 ErrorMessage = l.ErrorMessage,
+                ServerId = l.ServerId,
+                ServerName = l.ServerName,
                 ImportedAt = l.ImportedAt
             })
             .FirstOrDefaultAsync();

@@ -2,14 +2,18 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Card, Table, Tag, Typography, Space, Button, Modal, Form, Input,
-  Select, message, Popconfirm, Switch, List, Spin
+  Select, message, Popconfirm, Switch, List, Spin, Checkbox
 } from 'antd';
 import {
   UserOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
-  LockOutlined, LinkOutlined, DisconnectOutlined, SearchOutlined
+  LockOutlined, LinkOutlined, DisconnectOutlined, SearchOutlined,
+  DatabaseOutlined
 } from '@ant-design/icons';
 import { authApi } from '../../api/auth';
-import type { UserInfo, Role, PagedResult, LdapSearchResult } from '../../types';
+import { databaseAccessApi } from '../../api/databaseAccess';
+import { serversApi } from '../../api/servers';
+import { useAuth } from '../../context/AuthContext';
+import type { UserInfo, Role, PagedResult, LdapSearchResult, DatabaseInfo, TableInfo, UserTableAccess, SqlServerInstance } from '../../types';
 
 const { Title, Text } = Typography;
 
@@ -35,6 +39,23 @@ export default function UsersPage() {
   const [ldapResults, setLdapResults] = useState<LdapSearchResult[]>([]);
   const [ldapSearching, setLdapSearching] = useState(false);
   const [linkTargetUser, setLinkTargetUser] = useState<UserInfo | null>(null);
+
+  // Database access states
+  const { hasPermission } = useAuth();
+  const [dbAccessModalVisible, setDbAccessModalVisible] = useState(false);
+  const [dbAccessUser, setDbAccessUser] = useState<UserInfo | null>(null);
+  const [allDatabases, setAllDatabases] = useState<DatabaseInfo[]>([]);
+  const [allServers, setAllServers] = useState<SqlServerInstance[]>([]);
+  const [userAccesses, setUserAccesses] = useState<UserTableAccess[]>([]);
+  const [dbTableMap, setDbTableMap] = useState<Map<string, TableInfo[]>>(new Map());
+  const [expandedDbs, setExpandedDbs] = useState<Set<string>>(new Set());
+  const [dbAccessLoading, setDbAccessLoading] = useState(false);
+
+  // Reset password states
+  const [resetPwdVisible, setResetPwdVisible] = useState(false);
+  const [resetPwdUser, setResetPwdUser] = useState<UserInfo | null>(null);
+  const [resetPwdForm] = Form.useForm();
+  const [resetPwdSubmitting, setResetPwdSubmitting] = useState(false);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -156,6 +177,116 @@ export default function UsersPage() {
     }
   };
 
+  const handleOpenDbAccess = async (user: UserInfo) => {
+    setDbAccessUser(user);
+    setDbAccessModalVisible(true);
+    setDbAccessLoading(true);
+    setDbTableMap(new Map());
+    setExpandedDbs(new Set());
+    try {
+      const [allDbRes, userAccessRes, serversRes] = await Promise.all([
+        databaseAccessApi.getAvailableDatabases(),
+        databaseAccessApi.getUserTableAccesses(user.id),
+        serversApi.getAll(),
+      ]);
+      setAllDatabases(allDbRes.data.data ?? []);
+      setUserAccesses(userAccessRes.data.data ?? []);
+      setAllServers(serversRes.data.data ?? []);
+    } catch {
+      message.error('Failed to load database access info');
+    } finally {
+      setDbAccessLoading(false);
+    }
+  };
+
+  const handleExpandDatabase = async (database: string, serverId?: number) => {
+    const mapKey = `${serverId ?? 0}:${database}`;
+    if (dbTableMap.has(mapKey)) return;
+    try {
+      const res = await databaseAccessApi.getDatabaseTables(database, serverId);
+      setDbTableMap(prev => new Map(prev).set(mapKey, res.data.data ?? []));
+      setExpandedDbs(prev => new Set(prev).add(mapKey));
+    } catch {
+      message.error(`Failed to load tables for ${database}`);
+    }
+  };
+
+  const isDatabaseWildcard = (database: string, serverId?: number) =>
+    userAccesses.some(a => a.databaseName === database && !a.tableName && (a.serverId ?? undefined) === (serverId ?? undefined));
+
+  const isTableGranted = (database: string, schema: string, table: string, serverId?: number) =>
+    userAccesses.some(a =>
+      a.databaseName === database && a.tableName === table && (a.schemaName || 'dbo') === schema && (a.serverId ?? undefined) === (serverId ?? undefined)
+    );
+
+  const handleToggleWildcard = (serverId: number | undefined, database: string, checked: boolean) => {
+    if (checked) {
+      setUserAccesses(prev => [
+        ...prev.filter(a => !(a.databaseName === database && (a.serverId ?? undefined) === (serverId ?? undefined))),
+        { serverId, databaseName: database },
+      ]);
+    } else {
+      setUserAccesses(prev => prev.filter(a => !(a.databaseName === database && (a.serverId ?? undefined) === (serverId ?? undefined))));
+    }
+  };
+
+  const handleToggleTable = (serverId: number | undefined, database: string, schema: string, table: string, checked: boolean) => {
+    if (checked) {
+      setUserAccesses(prev => [...prev, {
+        serverId,
+        databaseName: database,
+        schemaName: schema,
+        tableName: table,
+      }]);
+    } else {
+      setUserAccesses(prev => prev.filter(a =>
+        !(a.databaseName === database
+          && a.tableName === table
+          && (a.schemaName || 'dbo') === schema
+          && (a.serverId ?? undefined) === (serverId ?? undefined))
+      ));
+    }
+  };
+
+  const handleSaveDbAccess = async () => {
+    if (!dbAccessUser) return;
+    setDbAccessLoading(true);
+    try {
+      await databaseAccessApi.setUserTableAccesses(dbAccessUser.id, userAccesses);
+      message.success(t('users.databaseAccessSuccess'));
+      setDbAccessModalVisible(false);
+    } catch {
+      message.error('Failed to save database access');
+    } finally {
+      setDbAccessLoading(false);
+    }
+  };
+
+  const handleOpenResetPwd = (user: UserInfo) => {
+    setResetPwdUser(user);
+    resetPwdForm.resetFields();
+    setResetPwdVisible(true);
+  };
+
+  const handleResetPwdSubmit = async () => {
+    if (!resetPwdUser) return;
+    try {
+      const values = await resetPwdForm.validateFields();
+      setResetPwdSubmitting(true);
+      await authApi.resetUserPassword(resetPwdUser.id, { newPassword: values.newPassword });
+      message.success(t('users.resetPasswordSuccess'));
+      setResetPwdVisible(false);
+    } catch (err: unknown) {
+      if ((err as { errorFields?: unknown })?.errorFields) return;
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        'Failed to reset password';
+      message.error(msg);
+    } finally {
+      setResetPwdSubmitting(false);
+    }
+  };
+
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
     { title: 'Username', dataIndex: 'username', key: 'username' },
@@ -205,6 +336,15 @@ export default function UsersPage() {
           >
             Edit
           </Button>
+          {record.authType !== 'LDAP' && (
+            <Button
+              type="link"
+              icon={<LockOutlined />}
+              onClick={() => handleOpenResetPwd(record)}
+            >
+              {t('users.resetPassword')}
+            </Button>
+          )}
           {record.authType !== 'LDAP' ? (
             <Button
               type="link"
@@ -224,6 +364,15 @@ export default function UsersPage() {
                 {t('users.unlinkLdap')}
               </Button>
             </Popconfirm>
+          )}
+          {hasPermission('Database.Manage') && (
+            <Button
+              type="link"
+              icon={<DatabaseOutlined />}
+              onClick={() => handleOpenDbAccess(record)}
+            >
+              {t('users.databaseAccess')}
+            </Button>
           )}
           <Popconfirm
             title="Delete this user?"
@@ -332,6 +481,47 @@ export default function UsersPage() {
       </Modal>
 
       <Modal
+        title={t('users.resetPasswordTitle', { username: resetPwdUser?.username ?? '' })}
+        open={resetPwdVisible}
+        onOk={handleResetPwdSubmit}
+        onCancel={() => setResetPwdVisible(false)}
+        confirmLoading={resetPwdSubmitting}
+        destroyOnClose
+      >
+        <div style={{ marginBottom: 16, marginTop: 8 }}>
+          <Text type="secondary">{t('users.resetPasswordHint')}</Text>
+        </div>
+        <Form form={resetPwdForm} layout="vertical">
+          <Form.Item
+            name="newPassword"
+            label={t('changePassword.newPassword')}
+            rules={[
+              { required: true, message: t('changePassword.newPassword') },
+              { min: 6, message: t('changePassword.minLength') },
+            ]}
+          >
+            <Input.Password prefix={<LockOutlined />} />
+          </Form.Item>
+          <Form.Item
+            name="confirmPassword"
+            label={t('changePassword.confirmPassword')}
+            dependencies={['newPassword']}
+            rules={[
+              { required: true, message: t('changePassword.confirmPassword') },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('newPassword') === value) return Promise.resolve();
+                  return Promise.reject(new Error(t('changePassword.passwordMismatch')));
+                },
+              }),
+            ]}
+          >
+            <Input.Password prefix={<LockOutlined />} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
         title={t('users.linkLdapTitle')}
         open={ldapModalVisible}
         onCancel={() => setLdapModalVisible(false)}
@@ -378,6 +568,101 @@ export default function UsersPage() {
               </List.Item>
             )}
           />
+        </Spin>
+      </Modal>
+
+      <Modal
+        title={t('users.databaseAccessTitle', { username: dbAccessUser?.username ?? '' })}
+        open={dbAccessModalVisible}
+        onOk={handleSaveDbAccess}
+        onCancel={() => setDbAccessModalVisible(false)}
+        confirmLoading={dbAccessLoading}
+        okText={t('users.databaseAccessSave')}
+        width={600}
+        destroyOnClose
+      >
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          {t('users.tableAccessHint')}
+        </Text>
+        <Spin spinning={dbAccessLoading}>
+          {allDatabases.length === 0 && !dbAccessLoading ? (
+            <Text type="secondary">{t('users.noDatabaseAccess')}</Text>
+          ) : (
+            <div style={{ maxHeight: 400, overflow: 'auto' }}>
+              {(() => {
+                // Group databases by server
+                const grouped = new Map<string, DatabaseInfo[]>();
+                const localGroup: DatabaseInfo[] = [];
+                for (const db of allDatabases) {
+                  if (db.serverId != null) {
+                    const key = String(db.serverId);
+                    if (!grouped.has(key)) grouped.set(key, []);
+                    grouped.get(key)!.push(db);
+                  } else {
+                    localGroup.push(db);
+                  }
+                }
+                const getServerName = (serverId: number) =>
+                  allServers.find(s => s.id === serverId)?.name || `Server #${serverId}`;
+
+                const renderDb = (db: DatabaseInfo) => {
+                  const serverId = db.serverId;
+                  const mapKey = `${serverId ?? 0}:${db.name}`;
+                  return (
+                    <div key={mapKey} style={{ marginBottom: 12 }}>
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
+                        onClick={() => {
+                          if (!isDatabaseWildcard(db.name, serverId)) {
+                            handleExpandDatabase(db.name, serverId);
+                          }
+                        }}
+                      >
+                        <Checkbox
+                          checked={isDatabaseWildcard(db.name, serverId)}
+                          onChange={(e) => handleToggleWildcard(serverId, db.name, e.target.checked)}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <strong>{db.name}</strong> {t('users.selectAllTables')}
+                        </Checkbox>
+                      </div>
+                      {!isDatabaseWildcard(db.name, serverId) && expandedDbs.has(mapKey) && (
+                        <div style={{ marginLeft: 24, marginTop: 4 }}>
+                          {(dbTableMap.get(mapKey) ?? []).map(table => (
+                            <Checkbox
+                              key={`${serverId ?? 0}:${table.schema}.${table.tableName}`}
+                              checked={isTableGranted(db.name, table.schema, table.tableName, serverId)}
+                              onChange={(e) => handleToggleTable(serverId, db.name, table.schema, table.tableName, e.target.checked)}
+                              style={{ display: 'block', marginBottom: 4 }}
+                            >
+                              {table.schema}.{table.tableName}
+                            </Checkbox>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                };
+
+                return (
+                  <>
+                    {localGroup.length > 0 && (
+                      <div style={{ marginBottom: 8 }}>
+                        <Text strong style={{ fontSize: 13, color: '#888' }}>Local Server</Text>
+                        {localGroup.map(renderDb)}
+                      </div>
+                    )}
+                    {Array.from(grouped.entries()).map(([serverIdKey, dbs]) => (
+                      <div key={serverIdKey} style={{ marginBottom: 8 }}>
+                        <Text strong style={{ fontSize: 13, color: '#1890ff' }}>[{getServerName(Number(serverIdKey))}]</Text>
+                        {dbs.map(renderDb)}
+                      </div>
+                    ))}
+                  </>
+                );
+              })()}
+            </div>
+          )}
         </Spin>
       </Modal>
     </div>

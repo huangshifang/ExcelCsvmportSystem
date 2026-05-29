@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { ApiResponse, LoginRequest, LoginResponse, UserInfo, PagedResult, CreateUserRequest, UpdateUserRequest, LinkLdapRequest, LdapSearchResult } from '../types';
+import type { ApiResponse, LoginRequest, LoginResponse, UserInfo, PagedResult, CreateUserRequest, UpdateUserRequest, LinkLdapRequest, LdapSearchResult, LoginAuditLog } from '../types';
 
 export const authApi = {
   login: (data: LoginRequest) =>
@@ -23,6 +23,9 @@ export const authApi = {
   deleteUser: (id: number) =>
     apiClient.delete<ApiResponse<null>>(`/auth/users/${id}`),
 
+  resetUserPassword: (id: number, data: { newPassword: string }) =>
+    apiClient.post<ApiResponse<null>>(`/auth/users/${id}/reset-password`, data),
+
   linkLdap: (userId: number, data: LinkLdapRequest) =>
     apiClient.post<ApiResponse<UserInfo>>(`/auth/users/${userId}/link-ldap`, data),
 
@@ -31,4 +34,10 @@ export const authApi = {
 
   searchLdapUsers: (search?: string) =>
     apiClient.get<ApiResponse<LdapSearchResult[]>>('/auth/ldap-users', { params: { search } }),
+
+  getCaptcha: () =>
+    apiClient.get<ApiResponse<{ token: string; imageBase64: string }>>('/auth/captcha'),
+
+  getLoginLogs: (params: { page?: number; pageSize?: number; username?: string; success?: boolean; from?: string; to?: string }) =>
+    apiClient.get<ApiResponse<PagedResult<LoginAuditLog>>>('/auth/login-logs', { params }),
 };
